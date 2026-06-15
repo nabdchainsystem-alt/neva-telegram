@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- 🔄 never let the WebView cache the entry HTML — it references hash-busted
+         assets, so a stale index.html is the #1 cause of "old bundle" reports
+         (the in-app /api/version killer is the backstop). Hashed assets stay
+         immutably cached; only this tiny HTML must always revalidate. -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <!-- WalletConnect (in-Telegram wallet linking) expects Node-ish globals in a
+         browser build; shim them before any module loads. Harmless to everything else. -->
+    <script>window.global=window.global||window;window.process=window.process||{env:{}};</script>
+    <link rel="icon" type="image/png" href="./smint-coin.png" />
+    <link rel="apple-touch-icon" href="./smint-coin.png" />
+    <!-- v109: desktop/web install (PWA) — relative href survives the Pages subpath -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <!-- the Google Fonts css is @import'ed from the app stylesheet — a LATE
+         discovery (html → css → font css → woff2). Warming both origins now
+         saves the DNS+TLS round-trips when that chain finally lands. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- v211: the font css moved here from mint.css @import — it now loads in
+         PARALLEL with the app stylesheet instead of after it (same URL, same
+         fonts, one less serial hop before text renders) -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito:wght@500;700;800&family=Noto+Kufi+Arabic:wght@500;700;800&display=swap" />
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#74bcff" />
+    <meta name="color-scheme" content="light" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="SKYMINT" />
+    <meta name="format-detection" content="telephone=no" />
+
+    <meta name="description" content="SKYMINT — build a little minting engine on a cloud and watch it mint. Tap, catch sun-motes, upgrade your machine, climb the board." />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="SKYMINT ✦ mint coins in the sky" />
+    <meta property="og:description" content="Build your sky engine. Tap · Catch · Upgrade · Mint." />
+    <meta property="og:image" content="./smint-coin.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="SKYMINT ✦ mint coins in the sky" />
+    <meta name="twitter:description" content="Build your sky engine. Tap · Catch · Upgrade · Mint." />
+    <meta name="twitter:image" content="./smint-coin.png" />
+
+    <title>SKYMINT ✦</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script>
+      // SKYMINT v167: the bundled @twa-dev/sdk vendors an OLD (7.10) copy of
+      // this script and OVERWRITES window.Telegram when the app bundle boots —
+      // silently erasing every Bot-API-8.0 method (requestFullscreen, the real
+      // swipe lock). Snapshot the official objects NOW, while they're fresh;
+      // src/tg/telegram.ts prefers the snapshot for all modern calls and
+      // re-chains incoming events so BOTH copies keep hearing Telegram.
+      window.__TG_OFFICIAL = window.Telegram && window.Telegram.WebApp;
+      window.__TG_OFFICIAL_WEBVIEW = window.Telegram && window.Telegram.WebView;
+    </script>
+    <script type="module" crossorigin src="./assets/index-BEFtp3Rt.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/rolldown-runtime--c01j_DQ.js">
+    <link rel="modulepreload" crossorigin href="./assets/walletconnect-CpAO4ygM.js">
+    <link rel="modulepreload" crossorigin href="./assets/vendor-1mvpYbYC.js">
+    <link rel="stylesheet" crossorigin href="./assets/index-DWQpgCzO.css">
+  </head>
+  <body>
+    <!-- preloader (v99; v148 showpiece; fantasy-world backdrop): a hot-air
+         balloon LIFT-OFF — pure inline HTML/CSS so it paints INSTANTLY,
+         before any JS. A 3s story: the balloon rises into frame and settles
+         into its sway, the SKYMINT letters pop in one by one under a passing
+         shine, sun rays turn slowly, golden sparks climb past, and the
+         altitude bar fills ONCE across the hold — then the cloud banks part
+         and the balloon soars past the top: you break through the clouds
+         straight into the game. Behind it all, a FANTASY WORLD: a floating
+         castle island and a wizard spire drifting on the wind, a soft
+         rainbow rising behind the balloon, star-dust twinkling in the high
+         sky — the dreamscape the engine flies over. main.tsx drives
+         .done / .instant and re-shows the splash whenever the Mini App
+         hides, so Telegram's close snapshot is the preloader, never a
+         stale frame. -->
+    <style>
+      #splash {
+        position: fixed;
+        inset: 0;
+        z-index: 99;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        overflow: hidden;
+        background: linear-gradient(180deg, #58aeff 0%, #9ed3ff 48%, #dcf2ff 100%);
+        font-family: system-ui, sans-serif;
+        /* the cloud-break choreography (.8s) plays first, then the sky fades;
+           visibility flips last so the hidden splash stops painting */
+        transition: opacity 0.45s ease 0.4s, visibility 0s linear 0.85s;
+      }
+      #splash.done { opacity: 0; visibility: hidden; pointer-events: none; }
+      /* ❄️ HEAT: the splash is never remove()d (it is Telegram's close-snapshot
+         preloader), but once hidden its ~30 looping SVG/CSS animations kept
+         ticking forever behind the live game — a constant style-recalc + paint
+         tax that warmed the phone for zero benefit. Freeze them while hidden;
+         they resume instantly if the splash is re-shown on app hide. */
+      #splash.done, #splash.done * { animation-play-state: paused !important; }
+      /* snapshot path: main.tsx jumps the splash on/off between frames */
+      #splash.instant, #splash.instant * { transition: none !important; }
+
+      /* warm sun, breathing */
+      #splash .sp-sun {
+        position: absolute;
+        top: 7%;
+        left: 50%;
+        width: 130px;
+        height: 130px;
+        margin-left: -65px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(255, 240, 180, 0.95), rgba(255, 214, 128, 0.45) 46%, rgba(255, 214, 128, 0) 72%);
+        animation: sp-glow 3.2s ease-in-out infinite;
+      }
+      @keyframes sp-glow { 0%, 100% { transform: scale(1); opacity: 0.9; } 50% { transform: scale(1.14); opacity: 1; } }
+
+      /* slow-turning rays behind the sun — the "alive" tell (v148) */
+      #splash .sp-rays {
+        position: absolute;
+        top: 7%;
+        left: 50%;
+        width: 260px;
+        height: 260px;
+        margin: -65px 0 0 -130px;
+        border-radius: 50%;
+        background: repeating-conic-gradient(
+          rgba(255, 232, 160, 0.18) 0 11deg,
+          rgba(255, 232, 160, 0) 11deg 30deg
+        );
+        -webkit-mask: radial-gradient(circle, rgba(0,0,0,0) 26%, #000 34%, rgba(0,0,0,0) 72%);
+        mask: radial-gradient(circle, rgba(0,0,0,0) 26%, #000 34%, rgba(0,0,0,0) 72%);
+        animation: sp-rays 16s linear infinite;
+      }
+      @keyframes sp-rays { to { transform: rotate(360deg); } }
+
+      /* v151: faraway floating islands — tiny, scattered wide apart, each
+         bobbing on its own slow clock (the Sky Map islands, seen from above) */
+      #splash .sp-isle {
+        position: absolute;
+        width: 64px;
+        height: 34px;
+        opacity: 0.55;
+        animation: sp-isle ease-in-out infinite alternate;
+      }
+      #splash .sp-isle::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 12%;
+        width: 76%;
+        height: 15px;
+        border-radius: 12px 12px 7px 7px;
+        background: linear-gradient(180deg, #8be3ae, #4ec98a);
+        box-shadow: inset 0 -3px 0 rgba(36, 110, 75, 0.25);
+      }
+      #splash .sp-isle::after {
+        content: '';
+        position: absolute;
+        top: 11px;
+        left: 0;
+        width: 100%;
+        height: 18px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.92);
+        filter: blur(1.5px);
+      }
+      #splash .sp-i1 { left: 7%;  top: 13%; transform: scale(0.78); animation-duration: 7s;   animation-delay: -2s; }
+      #splash .sp-i2 { left: 76%; top: 22%; transform: scale(1.05); animation-duration: 8.5s; animation-delay: -5.4s; }
+      @keyframes sp-isle { from { margin-top: -6px; } to { margin-top: 7px; } }
+
+      /* ── the FANTASY WORLD ── a misty castle island (left) and a lone
+         wizard spire (right) drift where the two low isles used to bob —
+         hazy lavender silhouettes with warm windows, far below the balloon.
+         Pure inline SVG: paints with the first frame, no asset fetch. */
+      #splash .sp-castle,
+      #splash .sp-spire {
+        position: absolute;
+        opacity: 0.8;
+        animation: sp-isle ease-in-out infinite alternate;
+      }
+      #splash .sp-castle { left: -1%; top: 47%; width: 158px; animation-duration: 9s;   animation-delay: -3.3s; }
+      #splash .sp-spire  { right: 0;  top: 44%; width: 88px;  animation-duration: 7.6s; animation-delay: -1.6s; opacity: 0.7; }
+
+      /* a soft rainbow rises behind the balloon, feet hidden in the cloud
+         banks — faint on purpose, a faraway promise rather than a poster */
+      #splash .sp-rainbow {
+        position: absolute;
+        left: 50%;
+        top: 44%;
+        width: 380px;
+        height: 190px;
+        margin-left: -190px;
+        border-radius: 190px 190px 0 0;
+        background: radial-gradient(
+          circle 190px at 50% 100%,
+          rgba(0, 0, 0, 0) 124px,
+          rgba(255, 122, 144, 0.55) 125px 134px,
+          rgba(255, 199, 92, 0.55)  134px 143px,
+          rgba(126, 222, 162, 0.55) 143px 152px,
+          rgba(116, 172, 255, 0.55) 152px 161px,
+          rgba(0, 0, 0, 0) 162px
+        );
+        opacity: 0.34;
+        filter: blur(1px);
+        /* the legs dissolve into the air instead of stopping mid-sky */
+        -webkit-mask: linear-gradient(180deg, #000 55%, rgba(0, 0, 0, 0) 96%);
+        mask: linear-gradient(180deg, #000 55%, rgba(0, 0, 0, 0) 96%);
+      }
+
+      /* star-dust twinkling in the high sky, flanking the sun */
+      #splash .sp-tw {
+        position: absolute;
+        color: #ffffff;
+        opacity: 0.75;
+        text-shadow: 0 0 7px rgba(255, 255, 255, 0.95);
+        animation: sp-tw ease-in-out infinite alternate;
+      }
+      #splash .sp-t1 { left: 12%; top: 30%; font-size: 10px; animation-duration: 2.1s; animation-delay: -0.4s; }
+      #splash .sp-t2 { left: 29%; top: 9%;  font-size: 8px;  animation-duration: 2.8s; animation-delay: -1.2s; }
+      #splash .sp-t3 { left: 69%; top: 7%;  font-size: 9px;  animation-duration: 2.4s; animation-delay: -0.8s; }
+      #splash .sp-t4 { left: 88%; top: 33%; font-size: 11px; animation-duration: 3.1s; animation-delay: -1.6s; }
+      #splash .sp-t5 { left: 55%; top: 27%; font-size: 7px;  animation-duration: 2.6s; animation-delay: -2s; }
+      @keyframes sp-tw {
+        from { opacity: 0.3;  transform: scale(0.75); }
+        to   { opacity: 0.95; transform: scale(1.2); }
+      }
+
+      /* golden mint-sparks climbing past as you rise (v148) */
+      #splash .sp-spark {
+        position: absolute;
+        bottom: -5%;
+        font-size: 15px;
+        color: #ffd36e;
+        text-shadow: 0 0 8px rgba(255, 211, 110, 0.9);
+        opacity: 0;
+        animation: sp-spark 3.4s ease-in infinite;
+        z-index: 1;
+      }
+      #splash .sp-s1 { left: 16%; animation-delay: 0.3s; }
+      #splash .sp-s2 { left: 78%; animation-delay: 1.1s; font-size: 12px; }
+      #splash .sp-s3 { left: 36%; animation-delay: 1.9s; font-size: 18px; }
+      #splash .sp-s4 { left: 62%; animation-delay: 0.7s; font-size: 11px; }
+      @keyframes sp-spark {
+        0%   { opacity: 0; transform: translateY(0) scale(0.7) rotate(0deg); }
+        12%  { opacity: 0.95; }
+        70%  { opacity: 0.7; }
+        100% { opacity: 0; transform: translateY(-74vh) scale(1.2) rotate(50deg); }
+      }
+
+      /* puffs streaming downward — the world slides past as you climb */
+      #splash .sp-puff {
+        position: absolute;
+        top: 0;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.55);
+        filter: blur(4px);
+        animation: sp-fall linear infinite;
+      }
+      #splash .sp-p1 { left: 8%;  width: 110px; height: 34px; opacity: 0.6;  animation-duration: 6s;   animation-delay: -1s; }
+      #splash .sp-p2 { left: 66%; width: 84px;  height: 26px; opacity: 0.45; animation-duration: 4.8s; animation-delay: -3.2s; }
+      #splash .sp-p3 { left: 28%; width: 60px;  height: 20px; opacity: 0.4;  animation-duration: 4s;   animation-delay: -2s; }
+      #splash .sp-p4 { left: 80%; width: 120px; height: 36px; opacity: 0.55; animation-duration: 7s;   animation-delay: -5s; }
+      @keyframes sp-fall {
+        from { transform: translateY(-90px); }
+        to   { transform: translateY(110vh); }
+      }
+
+      /* ── the balloon ── v148: it LIFTS OFF into frame (entrance on the
+         wrapper so it composes with the child's pendulum sway), then sways;
+         on .done it soars away past the top (animation must release the
+         transform) */
+      #splash .sp-rise {
+        animation: sp-rise 1s cubic-bezier(0.3, 1.25, 0.45, 1) both;
+      }
+      @keyframes sp-rise {
+        from { transform: translateY(48vh) scale(0.9); opacity: 0.4; }
+        55%  { opacity: 1; }
+        to   { transform: none; opacity: 1; }
+      }
+      #splash .sp-balloon {
+        position: relative;
+        width: 116px;
+        height: 174px;
+        transform-origin: 50% -70px;
+        animation: sp-sway 3.4s ease-in-out infinite;
+        transition: transform 0.8s cubic-bezier(0.45, -0.05, 0.65, 0.4), opacity 0.8s ease;
+      }
+      @keyframes sp-sway {
+        0%, 100% { transform: rotate(-2.4deg) translateY(0); }
+        50%      { transform: rotate(2.4deg) translateY(-7px); }
+      }
+      #splash.done .sp-balloon { animation: none; transform: translateY(-120vh) scale(1.1); }
+
+      #splash .sp-env {
+        position: absolute;
+        top: 0;
+        left: 50%;
+        width: 106px;
+        height: 120px;
+        margin-left: -53px;
+        border-radius: 53px 53px 46% 46% / 62px 62px 56% 56%;
+        background:
+          radial-gradient(circle at 34% 26%, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 56%),
+          repeating-linear-gradient(90deg, #2fbf87 0 14px, #74e0b4 14px 26px, #ffd36e 26px 40px, #fff7e6 40px 53px);
+        border: 2px solid rgba(36, 84, 66, 0.35);
+        box-shadow: inset -12px -10px 22px rgba(40, 90, 70, 0.22), 0 12px 28px rgba(90, 140, 190, 0.35);
+      }
+      /* skirt under the envelope */
+      #splash .sp-env::after {
+        content: '';
+        position: absolute;
+        bottom: -9px;
+        left: 50%;
+        width: 34px;
+        height: 14px;
+        margin-left: -17px;
+        background: #27996f;
+        clip-path: polygon(8% 0, 92% 0, 70% 100%, 30% 100%);
+      }
+      /* the SKYMINT coin rides on the envelope */
+      #splash .sp-coin {
+        position: absolute;
+        top: 38px;
+        left: 50%;
+        width: 42px;
+        height: 42px;
+        margin-left: -21px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 38% 32%, #eafff4, #9ef0c9 46%, #2fbf87 100%);
+        border: 3px solid rgba(36, 84, 66, 0.4);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 19px;
+        font-weight: 900;
+        color: #0f6b4d;
+        text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+      }
+      /* v151: the balloon CARRIES a big mint — it pulses with a green glow
+         (the envelope badge stays as the quiet brand mark) */
+      #splash .sp-mint {
+        position: absolute;
+        top: 142px;
+        left: 50%;
+        width: 46px;
+        height: 46px;
+        margin-left: -23px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 38% 32%, #eafff4, #9ef0c9 46%, #2fbf87 100%);
+        border: 3px solid rgba(36, 84, 66, 0.4);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 21px;
+        font-weight: 900;
+        color: #0f6b4d;
+        text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+        animation: sp-mintpulse 1.5s ease-in-out infinite;
+      }
+      @keyframes sp-mintpulse {
+        0%, 100% { transform: scale(1);    box-shadow: 0 0 10px 2px rgba(120, 255, 200, 0.45); }
+        50%      { transform: scale(1.12); box-shadow: 0 0 28px 10px rgba(120, 255, 200, 0.85); }
+      }
+      #splash .sp-rope {
+        position: absolute;
+        top: 117px;
+        width: 2px;
+        height: 28px;
+        background: rgba(96, 62, 20, 0.65);
+      }
+      #splash .sp-rope.l { left: 38px; transform: rotate(16deg); }
+      #splash .sp-rope.r { right: 38px; transform: rotate(-16deg); }
+      /* burner flame — quick lively flicker */
+      #splash .sp-flame {
+        position: absolute;
+        top: 124px;
+        left: 50%;
+        width: 14px;
+        height: 18px;
+        margin-left: -7px;
+        border-radius: 50% 50% 50% 50% / 62% 62% 38% 38%;
+        background: radial-gradient(circle at 50% 72%, #fff6d8, #ffc94d 55%, #ff9d2e 100%);
+        animation: sp-flame 0.5s ease-in-out infinite alternate;
+      }
+      @keyframes sp-flame {
+        from { transform: scaleY(0.82); opacity: 0.85; }
+        to   { transform: scaleY(1.18) scaleX(0.9); opacity: 1; }
+      }
+
+      /* wordmark + altitude shimmer + hint — fade out first on .done */
+      #splash .sp-ui { transition: opacity 0.3s ease; z-index: 3; }
+      #splash.done .sp-ui { opacity: 0; }
+      #splash .sp-name {
+        position: relative;
+        overflow: hidden;
+        margin-top: 4px;
+        padding: 6px 8px;
+        font-weight: 800;
+        font-size: 21px;
+        letter-spacing: 0.34em;
+        text-indent: 0.34em;
+        color: #1f3a5b;
+        text-shadow: 0 2px 0 rgba(255, 255, 255, 0.55), 0 0 22px rgba(255, 255, 255, 0.9);
+      }
+      /* v148: the letters pop in one by one with a happy overshoot… */
+      #splash .sp-name .sp-l {
+        display: inline-block;
+        opacity: 0;
+        animation: sp-letter 0.55s cubic-bezier(0.2, 1.5, 0.4, 1) both;
+      }
+      #splash .sp-name .sp-l:nth-child(1) { animation-delay: 0.50s; }
+      #splash .sp-name .sp-l:nth-child(2) { animation-delay: 0.62s; }
+      #splash .sp-name .sp-l:nth-child(3) { animation-delay: 0.74s; }
+      #splash .sp-name .sp-l:nth-child(4) { animation-delay: 0.86s; }
+      #splash .sp-name .sp-l:nth-child(5) { animation-delay: 0.98s; }
+      #splash .sp-name .sp-l:nth-child(6) { animation-delay: 1.10s; }
+      #splash .sp-name .sp-l:nth-child(7) { animation-delay: 1.22s; }
+      @keyframes sp-letter {
+        from { opacity: 0; transform: translateY(16px) scale(0.5) rotate(-10deg); }
+        60%  { opacity: 1; transform: translateY(-4px) scale(1.12) rotate(3deg); }
+        to   { opacity: 1; transform: none; }
+      }
+      /* …then ONE golden shine sweeps across the assembled name */
+      #splash .sp-name::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -40%;
+        width: 34%;
+        height: 100%;
+        background: linear-gradient(105deg, rgba(255, 255, 255, 0) 0%, rgba(255, 250, 220, 0.9) 50%, rgba(255, 255, 255, 0) 100%);
+        transform: skewX(-18deg);
+        animation: sp-shine 0.9s ease-out 1.7s both;
+      }
+      @keyframes sp-shine { from { left: -40%; } to { left: 120%; } }
+      #splash .sp-alt {
+        width: 146px;
+        height: 7px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.6);
+        border: 1px solid rgba(31, 58, 91, 0.08);
+        overflow: hidden;
+      }
+      /* v148: the altitude bar fills ONCE across the 3s hold — a real
+         "almost there" instead of the old back-and-forth shimmer */
+      #splash .sp-alt span {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #2fbf87, #74e0b4, #ffd36e);
+        transform-origin: 0 50%;
+        animation: sp-climb 2.9s cubic-bezier(0.3, 0.55, 0.45, 1) 0.1s both;
+      }
+      @keyframes sp-climb { from { transform: scaleX(0.04); } to { transform: scaleX(1); } }
+      #splash .sp-hint {
+        font-size: 11px;
+        font-weight: 700;
+        color: rgba(31, 58, 91, 0.55);
+      }
+
+      /* ── cloud banks framing the bottom — they PART on .done ── */
+      #splash .sp-bank {
+        position: absolute;
+        bottom: -14%;
+        width: 80%;
+        height: 46%;
+        filter: blur(2px);
+        animation: sp-bankdrift 8s ease-in-out infinite alternate;
+        transition: transform 0.8s cubic-bezier(0.55, 0, 0.6, 1);
+        z-index: 2;
+      }
+      #splash .sp-bank.left {
+        left: -16%;
+        background:
+          radial-gradient(circle at 24% 68%, #fff 32%, rgba(255, 255, 255, 0) 33%),
+          radial-gradient(circle at 50% 48%, #fff 29%, rgba(255, 255, 255, 0) 30%),
+          radial-gradient(circle at 74% 66%, #fff 33%, rgba(255, 255, 255, 0) 34%),
+          radial-gradient(circle at 48% 92%, #fff 46%, rgba(255, 255, 255, 0) 47%);
+      }
+      #splash .sp-bank.right {
+        right: -16%;
+        animation-delay: -4s;
+        background:
+          radial-gradient(circle at 30% 64%, #fff 31%, rgba(255, 255, 255, 0) 32%),
+          radial-gradient(circle at 58% 46%, #fff 30%, rgba(255, 255, 255, 0) 31%),
+          radial-gradient(circle at 80% 70%, #fff 34%, rgba(255, 255, 255, 0) 35%),
+          radial-gradient(circle at 55% 94%, #fff 47%, rgba(255, 255, 255, 0) 48%);
+      }
+      @keyframes sp-bankdrift { from { transform: translateX(-12px); } to { transform: translateX(12px); } }
+      #splash.done .sp-bank.left  { animation: none; transform: translateX(-118%); }
+      #splash.done .sp-bank.right { animation: none; transform: translateX(118%); }
+
+      /* ── quick-return boot ── main.tsx adds .quick when the player left
+         within the last few minutes (they just watched the full show): the
+         whole story compresses into a ~1.3s glide-through — fast lift-off,
+         letters pop in a quick run, the bar fills in a breath — then
+         main.tsx releases the balloon. */
+      #splash.quick .sp-rise { animation-duration: 0.55s; }
+      #splash.quick .sp-name .sp-l { animation-duration: 0.4s; }
+      #splash.quick .sp-name .sp-l:nth-child(1) { animation-delay: 0.10s; }
+      #splash.quick .sp-name .sp-l:nth-child(2) { animation-delay: 0.16s; }
+      #splash.quick .sp-name .sp-l:nth-child(3) { animation-delay: 0.22s; }
+      #splash.quick .sp-name .sp-l:nth-child(4) { animation-delay: 0.28s; }
+      #splash.quick .sp-name .sp-l:nth-child(5) { animation-delay: 0.34s; }
+      #splash.quick .sp-name .sp-l:nth-child(6) { animation-delay: 0.40s; }
+      #splash.quick .sp-name .sp-l:nth-child(7) { animation-delay: 0.46s; }
+      #splash.quick .sp-name::after { animation-delay: 0.7s; animation-duration: 0.55s; }
+      #splash.quick .sp-alt span { animation-duration: 1.05s; }
+
+      /* calm path: no choreography, just a soft fade (OS pref AND the in-game
+         Settings → Motion: Reduced override, which sets .reduce-motion on root) */
+      @media (prefers-reduced-motion: reduce) {
+        #splash * { animation: none !important; }
+        #splash { transition: opacity 0.4s ease, visibility 0s linear 0.4s; }
+        #splash.done .sp-balloon, #splash.done .sp-bank.left, #splash.done .sp-bank.right { transform: none; }
+        /* v148 entrances start hidden — the calm path lands them visible */
+        #splash .sp-name .sp-l { opacity: 1; transform: none; }
+        #splash .sp-alt span { transform: none; }
+        #splash .sp-name::after { content: none; }
+        #splash .sp-spark { opacity: 0; }
+      }
+      .reduce-motion #splash * { animation: none !important; }
+      .reduce-motion #splash { transition: opacity 0.4s ease, visibility 0s linear 0.4s; }
+      .reduce-motion #splash.done .sp-balloon,
+      .reduce-motion #splash.done .sp-bank.left,
+      .reduce-motion #splash.done .sp-bank.right { transform: none; }
+      .reduce-motion #splash .sp-name .sp-l { opacity: 1; transform: none; }
+      .reduce-motion #splash .sp-alt span { transform: none; }
+      .reduce-motion #splash .sp-name::after { content: none; }
+      .reduce-motion #splash .sp-spark { opacity: 0; }
+    </style>
+    <div id="splash">
+      <div class="sp-rays"></div>
+      <div class="sp-sun"></div>
+      <div class="sp-rainbow"></div>
+      <!-- floating castle island — keep + two towers + banner, waterfall off
+           the ledge, warm windows; rocky underside tapers into the mist -->
+      <svg class="sp-castle" viewBox="0 -14 170 172" aria-hidden="true">
+        <path d="M52 96 q-3 26 -7 48" stroke="rgba(196,232,255,0.85)" stroke-width="5" fill="none" stroke-linecap="round"/>
+        <path d="M18 92 Q85 86 152 92 L126 118 Q102 140 85 154 Q66 132 42 114 Z" fill="#a195cf"/>
+        <path d="M32 95 L62 122 L85 146 L70 108 Z" fill="#b8abe2" opacity="0.75"/>
+        <ellipse cx="85" cy="92" rx="70" ry="12" fill="#7fd8a4"/>
+        <ellipse cx="85" cy="89" rx="70" ry="10" fill="#a5ecc4"/>
+        <rect x="62" y="48" width="46" height="42" rx="3" fill="#efe9ff"/>
+        <rect x="62" y="48" width="46" height="8" fill="#dcd2f5"/>
+        <path d="M78 90 v-14 a7 7 0 0 1 14 0 v14 Z" fill="#8f7fd6"/>
+        <rect x="46" y="36" width="18" height="54" rx="3" fill="#e6ddfb"/>
+        <path d="M43 38 L55 14 L67 38 Z" fill="#9e8fe0"/>
+        <rect x="106" y="36" width="18" height="54" rx="3" fill="#e6ddfb"/>
+        <path d="M103 38 L115 14 L127 38 Z" fill="#9e8fe0"/>
+        <rect x="78" y="24" width="14" height="28" fill="#f4efff"/>
+        <path d="M75 26 L85 2 L95 26 Z" fill="#8f7fd6"/>
+        <path d="M85 2 L85 -10 L98 -4 Z" fill="#2fbf87"/>
+        <rect x="52" y="52" width="6" height="9" rx="2" fill="#ffd36e"/>
+        <rect x="112" y="52" width="6" height="9" rx="2" fill="#ffd36e"/>
+        <rect x="70" y="62" width="6" height="9" rx="2" fill="#ffd36e"/>
+        <rect x="94" y="62" width="6" height="9" rx="2" fill="#ffd36e"/>
+        <rect x="82" y="34" width="6" height="8" rx="2" fill="#ffd36e"/>
+      </svg>
+      <!-- lone wizard spire on its own little island -->
+      <svg class="sp-spire" viewBox="0 -12 90 134" aria-hidden="true">
+        <path d="M14 78 Q45 73 76 78 L62 98 Q52 112 45 122 Q36 108 26 96 Z" fill="#a195cf"/>
+        <ellipse cx="45" cy="78" rx="36" ry="8" fill="#7fd8a4"/>
+        <ellipse cx="45" cy="76" rx="36" ry="7" fill="#a5ecc4"/>
+        <rect x="33" y="30" width="24" height="48" rx="4" fill="#e6ddfb"/>
+        <path d="M29 32 L45 4 L61 32 Z" fill="#8f7fd6"/>
+        <path d="M45 4 L45 -8 L57 -2 Z" fill="#ffd36e"/>
+        <circle cx="45" cy="44" r="4.5" fill="#ffd36e"/>
+        <rect x="41" y="58" width="8" height="12" rx="3" fill="#ffd36e"/>
+      </svg>
+      <div class="sp-tw sp-t1">✦</div>
+      <div class="sp-tw sp-t2">✦</div>
+      <div class="sp-tw sp-t3">✦</div>
+      <div class="sp-tw sp-t4">✦</div>
+      <div class="sp-tw sp-t5">✦</div>
+      <div class="sp-puff sp-p1"></div>
+      <div class="sp-puff sp-p2"></div>
+      <div class="sp-puff sp-p3"></div>
+      <div class="sp-puff sp-p4"></div>
+      <div class="sp-isle sp-i1"></div>
+      <div class="sp-isle sp-i2"></div>
+      <div class="sp-spark sp-s1">✦</div>
+      <div class="sp-spark sp-s2">✦</div>
+      <div class="sp-spark sp-s3">✦</div>
+      <div class="sp-spark sp-s4">✦</div>
+      <div class="sp-rise">
+        <div class="sp-balloon">
+          <div class="sp-env"></div>
+          <div class="sp-coin">✦</div>
+          <div class="sp-rope l"></div>
+          <div class="sp-rope r"></div>
+          <div class="sp-flame"></div>
+          <div class="sp-mint">✦</div>
+        </div>
+      </div>
+      <div class="sp-name sp-ui"><span class="sp-l">S</span><span class="sp-l">K</span><span class="sp-l">Y</span><span class="sp-l">M</span><span class="sp-l">I</span><span class="sp-l">N</span><span class="sp-l">T</span></div>
+      <div class="sp-alt sp-ui"><span></span></div>
+      <div class="sp-hint sp-ui">climbing through the clouds…</div>
+      <div class="sp-bank left"></div>
+      <div class="sp-bank right"></div>
+    </div>
+
+    <canvas id="sky"></canvas>
+    <div id="root"></div>
+  </body>
+</html>

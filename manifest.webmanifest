@@ -1,0 +1,14 @@
+{
+  "name": "SKYMINT — mint coins in the sky",
+  "short_name": "SKYMINT",
+  "description": "Build a little minting engine on a cloud and watch it mint. Tap, catch sun-motes, upgrade your machine, climb the board.",
+  "start_url": "./?game",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#74bcff",
+  "theme_color": "#74bcff",
+  "icons": [
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
