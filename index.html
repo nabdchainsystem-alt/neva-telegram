@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- 🔄 never let the WebView cache the entry HTML — it references hash-busted
+         assets, so a stale index.html is the #1 cause of "old bundle" reports
+         (the in-app /api/version killer is the backstop). Hashed assets stay
+         immutably cached; only this tiny HTML must always revalidate. -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <!-- WalletConnect (in-Telegram wallet linking) expects Node-ish globals in a
+         browser build; shim them before any module loads. Harmless to everything else. -->
+    <script>window.global=window.global||window;window.process=window.process||{env:{}};</script>
+    <link rel="icon" type="image/png" href="./smint-coin.png" />
+    <link rel="apple-touch-icon" href="./smint-coin.png" />
+    <!-- v109: desktop/web install (PWA) — relative href survives the Pages subpath -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <!-- the Google Fonts css is @import'ed from the app stylesheet — a LATE
+         discovery (html → css → font css → woff2). Warming both origins now
+         saves the DNS+TLS round-trips when that chain finally lands. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- v211: the font css moved here from mint.css @import — it now loads in
+         PARALLEL with the app stylesheet instead of after it (same URL, same
+         fonts, one less serial hop before text renders) -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito:wght@500;700;800&family=Noto+Kufi+Arabic:wght@500;700;800&display=swap" />
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#74bcff" />
+    <meta name="color-scheme" content="light" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="SKYMINT" />
+    <meta name="format-detection" content="telephone=no" />
+
+    <meta name="description" content="SKYMINT — build a little minting engine on a cloud and watch it mint. Tap, catch sun-motes, upgrade your machine, climb the board." />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="SKYMINT ✦ mint coins in the sky" />
+    <meta property="og:description" content="Build your sky engine. Tap · Catch · Upgrade · Mint." />
+    <meta property="og:image" content="./smint-coin.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="SKYMINT ✦ mint coins in the sky" />
+    <meta name="twitter:description" content="Build your sky engine. Tap · Catch · Upgrade · Mint." />
+    <meta name="twitter:image" content="./smint-coin.png" />
+
+    <title>SKYMINT ✦</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script>
+      // SKYMINT v167: the bundled @twa-dev/sdk vendors an OLD (7.10) copy of
+      // this script and OVERWRITES window.Telegram when the app bundle boots —
+      // silently erasing every Bot-API-8.0 method (requestFullscreen, the real
+      // swipe lock). Snapshot the official objects NOW, while they're fresh;
+      // src/tg/telegram.ts prefers the snapshot for all modern calls and
+      // re-chains incoming events so BOTH copies keep hearing Telegram.
+      window.__TG_OFFICIAL = window.Telegram && window.Telegram.WebApp;
+      window.__TG_OFFICIAL_WEBVIEW = window.Telegram && window.Telegram.WebView;
+    </script>
+    <script type="module" crossorigin src="./assets/index-Bpv0f3L2.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/rolldown-runtime--c01j_DQ.js">
+    <link rel="modulepreload" crossorigin href="./assets/walletconnect-CpAO4ygM.js">
+    <link rel="modulepreload" crossorigin href="./assets/vendor-1mvpYbYC.js">
+    <link rel="stylesheet" crossorigin href="./assets/index-C9BZuxbW.css">
+  </head>
+  <body>
+    <!-- preloader (v444 BRAND splash): a cozy soft-3D BRAND loader — the
+         golden SMINT coin (the brand mark) is the hero, floating up into a
+         soft glow with a slow shine, the SKYMINT wordmark settling under it,
+         a gentle "loading" shimmer below — all on the cozy pastel sky
+         gradient with soft drifting clouds. Pure inline HTML/CSS (the coin
+         is the one image, served at /smint-coin.png) so the GRADIENT paints
+         INSTANTLY before any JS; the coin pops in a frame later — never a
+         blank/white flash first.
+         main.tsx drives .done (hidden) / .instant (snapshot jump, no
+         transitions) / .quick (~1.3s compressed quick-return) and re-shows
+         the splash whenever the Mini App hides, so Telegram's close snapshot
+         is the preloader, never a stale frame. The early inline <script>
+         after the markup hides the splash before paint on public web /
+         whitepaper visits (no ?game, no Telegram initData). -->
+    <style>
+      #splash {
+        position: fixed;
+        inset: 0;
+        z-index: 99;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        overflow: hidden;
+        /* INSTANT PAINT: this cozy pastel sky gradient paints before any JS or
+           image — never a blank/white flash. The coin image pops in a frame later. */
+        background: linear-gradient(180deg, #7cc1ff 0%, #aedaff 42%, #d8f0ff 74%, #f3fbff 100%);
+        font-family: "Baloo 2", "Nunito", system-ui, sans-serif;
+        /* soft brand fade-out on .done; visibility flips last so the hidden
+           splash stops painting */
+        transition: opacity 0.5s ease 0.05s, visibility 0s linear 0.55s;
+      }
+      #splash.done { opacity: 0; visibility: hidden; pointer-events: none; }
+      /* ❄️ HEAT: the splash is never remove()d (it is Telegram's close-snapshot
+         preloader), but once hidden its looping animations would keep ticking
+         forever behind the live game — a style-recalc + paint tax for nothing.
+         Freeze them while hidden; they resume if the splash is re-shown. */
+      #splash.done, #splash.done * { animation-play-state: paused !important; }
+      /* snapshot path: main.tsx jumps the splash on/off between frames */
+      #splash.instant, #splash.instant * { transition: none !important; }
+
+      /* warm sun-glow high in the sky, slowly breathing */
+      #splash .sp-sky {
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(56% 30% at 50% 14%, rgba(255, 246, 214, 0.85), rgba(255, 246, 214, 0) 70%),
+          radial-gradient(70% 40% at 84% 6%, rgba(255, 255, 255, 0.5), transparent 64%),
+          radial-gradient(60% 42% at 10% 70%, rgba(255, 255, 255, 0.32), transparent 60%);
+        animation: sp-skyglow 5.5s ease-in-out infinite;
+      }
+      @keyframes sp-skyglow { 0%, 100% { opacity: 0.85; } 50% { opacity: 1; } }
+
+      /* soft drifting clouds — pure CSS puffs, paint with the first frame */
+      #splash .sp-cloud {
+        position: absolute;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.9);
+        filter: blur(6px);
+        animation: sp-drift linear infinite;
+      }
+      #splash .sp-cloud::before,
+      #splash .sp-cloud::after {
+        content: '';
+        position: absolute;
+        border-radius: 999px;
+        background: inherit;
+      }
+      #splash .sp-cloud::before { width: 60%; height: 150%; left: 8%;  top: -34%; }
+      #splash .sp-cloud::after  { width: 52%; height: 138%; right: 10%; top: -22%; }
+      #splash .sp-c1 { left: -22%; top: 24%; width: 200px; height: 50px; opacity: 0.85; animation-duration: 26s; animation-delay: -4s; }
+      #splash .sp-c2 { left: -30%; top: 62%; width: 260px; height: 60px; opacity: 0.7;  animation-duration: 34s; animation-delay: -16s; }
+      #splash .sp-c3 { left: -26%; top: 80%; width: 180px; height: 44px; opacity: 0.8;  animation-duration: 30s; animation-delay: -9s; }
+      #splash .sp-c4 { left: -20%; top: 10%; width: 150px; height: 38px; opacity: 0.55; animation-duration: 38s; animation-delay: -22s; }
+      @keyframes sp-drift { from { transform: translateX(0); } to { transform: translateX(165vw); } }
+
+      /* ── the SMINT coin: the brand hero ── floats up into a soft glow, then
+         breathes gently. The coin image fades+pops in a frame after the
+         gradient (never a blank flash); on .done it lifts away with the fade. */
+      #splash .sp-stage {
+        position: relative;
+        z-index: 3;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 16px;
+      }
+      #splash .sp-coinwrap {
+        position: relative;
+        width: 168px;
+        height: 168px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        animation: sp-rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+      }
+      @keyframes sp-rise {
+        from { transform: translateY(34px); opacity: 0; }
+        to   { transform: none; opacity: 1; }
+      }
+      /* the soft radial glow behind the coin (the landing's hero treatment) */
+      #splash .sp-coinwrap::before {
+        content: '';
+        position: absolute;
+        width: 230px;
+        height: 230px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(255, 244, 205, 0.95) 0%, rgba(255, 220, 130, 0.42) 36%, rgba(255, 220, 130, 0) 68%);
+        animation: sp-halo 4.2s ease-in-out infinite;
+        z-index: -1;
+      }
+      @keyframes sp-halo {
+        0%, 100% { transform: scale(0.92); opacity: 0.8; }
+        50%      { transform: scale(1.08); opacity: 1; }
+      }
+      #splash .sp-coin {
+        width: 152px;
+        height: 152px;
+        object-fit: contain;
+        /* coin starts invisible and POPS in a frame after the gradient paints */
+        opacity: 0;
+        filter: drop-shadow(0 14px 24px rgba(70, 120, 170, 0.34));
+        animation: sp-coinin 0.7s ease-out 0.06s both, sp-float 4.6s ease-in-out 0.8s infinite;
+      }
+      @keyframes sp-coinin {
+        from { opacity: 0; transform: scale(0.78); }
+        to   { opacity: 1; transform: scale(1); }
+      }
+      @keyframes sp-float {
+        0%, 100% { transform: translateY(0) rotate(-1.4deg); }
+        50%      { transform: translateY(-9px) rotate(1.4deg); }
+      }
+      /* ONE slow shine sweeping across the coin */
+      #splash .sp-coinwrap::after {
+        content: '';
+        position: absolute;
+        top: 8%;
+        left: 8%;
+        width: 84%;
+        height: 84%;
+        border-radius: 50%;
+        background: linear-gradient(105deg, rgba(255, 255, 255, 0) 38%, rgba(255, 255, 255, 0.75) 50%, rgba(255, 255, 255, 0) 62%);
+        -webkit-mask: radial-gradient(circle, #000 62%, transparent 64%);
+        mask: radial-gradient(circle, #000 62%, transparent 64%);
+        transform: translateX(-120%) skewX(-12deg);
+        opacity: 0;
+        animation: sp-shine 2.6s ease-in-out 1.1s infinite;
+        pointer-events: none;
+      }
+      @keyframes sp-shine {
+        0%   { transform: translateX(-120%) skewX(-12deg); opacity: 0; }
+        14%  { opacity: 0.9; }
+        40%  { transform: translateX(120%) skewX(-12deg); opacity: 0; }
+        100% { transform: translateX(120%) skewX(-12deg); opacity: 0; }
+      }
+
+      /* wordmark + loading shimmer — fade out first on .done */
+      #splash .sp-ui {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        transition: opacity 0.3s ease;
+        animation: sp-uiin 0.7s ease-out 0.35s both;
+      }
+      @keyframes sp-uiin { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+      #splash.done .sp-ui { opacity: 0; }
+      #splash .sp-name {
+        font-weight: 800;
+        font-size: 30px;
+        letter-spacing: 0.22em;
+        text-indent: 0.22em;
+        color: #20496f;
+        text-shadow: 0 2px 0 rgba(255, 255, 255, 0.6), 0 0 26px rgba(255, 255, 255, 0.9);
+      }
+      #splash .sp-tag {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        color: rgba(32, 73, 111, 0.55);
+        margin-top: -4px;
+      }
+      /* a slim "loading" shimmer bar below the wordmark */
+      #splash .sp-bar {
+        width: 132px;
+        height: 5px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.65);
+        border: 1px solid rgba(32, 73, 111, 0.08);
+        overflow: hidden;
+      }
+      #splash .sp-bar span {
+        display: block;
+        width: 42%;
+        height: 100%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, rgba(232, 190, 99, 0), #e8be63 50%, rgba(232, 190, 99, 0));
+        animation: sp-sweep 1.4s ease-in-out infinite;
+      }
+      @keyframes sp-sweep {
+        from { transform: translateX(-130%); }
+        to   { transform: translateX(330%); }
+      }
+
+      /* ── quick-return boot ── main.tsx adds .quick when the player left
+         within the last few minutes: compress the brand reveal so the short
+         (~1.3s) hold doesn't feel cut off. */
+      #splash.quick .sp-coinwrap { animation-duration: 0.45s; }
+      #splash.quick .sp-coin { animation: sp-coinin 0.4s ease-out 0.04s both, sp-float 4.6s ease-in-out 0.5s infinite; }
+      #splash.quick .sp-ui { animation-delay: 0.18s; }
+
+      /* calm path: no choreography, just a soft fade (OS pref AND the in-game
+         Settings → Motion: Reduced override, which sets .reduce-motion on root).
+         Everything lands visible immediately. */
+      @media (prefers-reduced-motion: reduce) {
+        #splash * { animation: none !important; }
+        #splash { transition: opacity 0.4s ease, visibility 0s linear 0.4s; }
+        #splash .sp-coin { opacity: 1; transform: none; }
+        #splash .sp-coinwrap, #splash .sp-ui { opacity: 1; transform: none; }
+      }
+      .reduce-motion #splash * { animation: none !important; }
+      .reduce-motion #splash { transition: opacity 0.4s ease, visibility 0s linear 0.4s; }
+      .reduce-motion #splash .sp-coin { opacity: 1; transform: none; }
+      .reduce-motion #splash .sp-coinwrap,
+      .reduce-motion #splash .sp-ui { opacity: 1; transform: none; }
+    </style>
+    <div id="splash">
+      <div class="sp-sky"></div>
+      <div class="sp-cloud sp-c1"></div>
+      <div class="sp-cloud sp-c2"></div>
+      <div class="sp-cloud sp-c3"></div>
+      <div class="sp-cloud sp-c4"></div>
+      <div class="sp-stage">
+        <div class="sp-coinwrap">
+          <!-- the SMINT coin IS the brand — served at the stable root URL so it
+               loads fast; decoding=async so it never blocks the instant gradient -->
+          <img class="sp-coin" src="./smint-coin.png" alt="SKYMINT" decoding="async" fetchpriority="high" />
+        </div>
+        <div class="sp-ui">
+          <div class="sp-name">SKYMINT</div>
+          <div class="sp-tag">mint coins in the sky</div>
+          <div class="sp-bar"><span></span></div>
+        </div>
+      </div>
+    </div>
+    <!-- EARLY web-visit guard: runs synchronously during parse, BEFORE first
+         paint. The splash is unconditional inline HTML (it must, for the game's
+         instant paint + Telegram close-snapshot). But a plain web visitor to
+         playskymint.com / #whitepaper should never see the game preloader flash.
+         main.tsx only removes it AFTER the JS bundle loads — too late. So detect
+         a NON-game visit here and hide the splash now. Mirrors shouldOpenGame():
+         it IS the game (KEEP splash) if ?game is present OR Telegram WebApp
+         initData is a non-empty string; otherwise it's a web/landing/whitepaper
+         visit → hide before paint. Conservative + fail toward KEEPING the splash
+         (a real game boot must always show it). -->
+    <script>
+      (function () {
+        try {
+          var p = new URLSearchParams(window.location.search);
+          // public web pages explicitly: never show the game splash
+          var hash = window.location.hash || '';
+          var webPage = p.has('landing') || /^#landing\b/.test(hash) || /^#whitepaper\b/.test(hash);
+          // the game: forced via ?game, or a real Telegram open (non-empty initData)
+          var tgData = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData;
+          var isGame = p.has('game') || (typeof tgData === 'string' && tgData.length > 0);
+          if (webPage || !isGame) {
+            var el = document.getElementById('splash');
+            if (el) el.classList.add('done'); // .done = hidden + paused (no flash, no heat)
+          }
+        } catch (e) { /* fail toward KEEPING the splash — a real game boot must show it */ }
+      })();
+    </script>
+
+    <canvas id="sky"></canvas>
+    <div id="root"></div>
+  </body>
+</html>
